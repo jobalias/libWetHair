@@ -393,6 +393,10 @@ class TwoDScene {
 
   scalar getHairDensity(int pidx) const;
 
+  const Vec3Array& getMaterialFrames1(int pidx) const;
+
+  const Vec3Array& getMaterialFrames2(int pidx) const;
+
   const scalar& getLiquidTension() const;
 
   const scalar& getLiquidTheta() const;

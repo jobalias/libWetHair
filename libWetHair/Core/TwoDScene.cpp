@@ -850,6 +850,18 @@ scalar TwoDScene<DIM>::getHairDensity(int pidx) const {
 }
 
 template <int DIM>
+const Vec3Array& TwoDScene<DIM>::getMaterialFrames1(int pidx) const {
+  const StrandForce* sf = m_strands[m_particle_to_hairs[pidx]];
+  return sf->m_strandState->m_materialFrames1.get();
+}
+
+template <int DIM>
+const Vec3Array& TwoDScene<DIM>::getMaterialFrames2(int pidx) const {
+  const StrandForce* sf = m_strands[m_particle_to_hairs[pidx]];
+  return sf->m_strandState->m_materialFrames2.get();
+}
+
+template <int DIM>
 const scalar& TwoDScene<DIM>::getLiquidTension() const {
   return m_parameters.sigma;
 }

@@ -74,6 +74,8 @@ class TwoDSceneRenderer {
 
   void switchShowEdgeNormal();
 
+  void switchShowGrid();
+
   void switchShowLiquidPolygon();
 
   void setDC(const TwoDimensionalDisplayController<DIM>*);
@@ -83,6 +85,7 @@ class TwoDSceneRenderer {
   void initializeCircleRenderer(int num_points);
   void initializeSemiCircleRenderer(int num_points);
   void initializeCylinderRenderer(int num_points, const TwoDScene<DIM>& scene);
+  void initializeCylinderLineRenderer(int num_points, const TwoDScene<DIM>& scene);
   void initializeBoundaryRenderer(const TwoDScene<DIM>& scene);
 
   void renderSolidCircle(const Vectors<DIM>& center, double radius) const;
@@ -114,6 +117,10 @@ class TwoDSceneRenderer {
   std::vector<Vector3s> m_cylinder_points;
   std::vector<int> m_cylinder_elements;
 
+
+  std::vector<Vector3s> m_cylinder_line_points;
+  std::vector<int> m_cylinder_line_elements;
+
   bool m_draw_grid;
   bool m_draw_particles;
   bool m_draw_velocities;
@@ -128,6 +135,8 @@ class TwoDSceneRenderer {
   GLuint m_element_hairs;
   GLuint m_vertex_hair_core;
   GLuint m_vertex_hair_flow;
+  GLuint m_vertex_hair_m1;
+  GLuint m_vertex_hair_m2;
   GLuint m_vertex_fluids;
 
   const TwoDScene<DIM>* m_scene;

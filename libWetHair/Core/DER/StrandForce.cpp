@@ -54,7 +54,6 @@ StrandForce::StrandForce(TwoDScene<3>* scene,
   m_strandState =
       new StrandState(initDoFs, m_strandParams->getBendingMatrixBase());
   m_startState = new StartState(initDoFs);
-
   resizeInternals();
   freezeRestShape(
       0, getNumEdges());  // for now the rest shape is the shape in which the
@@ -156,11 +155,22 @@ void StrandForce::freezeRestShape(
   }
   updateEverythingThatDependsOnRestLengths();
 
+
+// SNJ: CHANGE TWIST AMOUNT
   for (IndexType vtx = begin; vtx < end; ++vtx) {
+    double twist_amt = 0.0; //-3.1415926 * 2 / getNumVertices();
+
+    
+    if ( vtx == getNumVertices() / 2) {
+      twist_amt = -3.14 *3 /4;
+    }
+  
+
     m_restKappas[vtx] = (1. - damping) * m_strandState->m_kappas[vtx] +
                         damping * m_restKappas[vtx];
-    m_restTwists[vtx] = (1. - damping) * m_strandState->m_twists[vtx] +
-                        damping * m_restTwists[vtx];
+    double rn = 10.0 / (double)(rand() % 100 - 50);
+    m_restTwists[vtx] = (1. - damping) * twist_amt +
+                        damping * m_restTwists[vtx]; //m_strandState->m_twists[vtx] 
   }
 }
 

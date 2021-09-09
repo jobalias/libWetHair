@@ -168,6 +168,9 @@ void TwoDimensionalDisplayController<DIM>::keyboard(unsigned char key, int x,
   } else if (m_render && (key == 'N' || key == 'n')) {
     m_render->switchShowParticleNormal();
     glutPostRedisplay();
+  } else if (m_render && (key == 'G' || key == 'g')) {
+    m_render->switchShowGrid();
+    glutPostRedisplay();
   } else if (key == 'I' || key == 'i') {
     if (DIM == 2) {
       std::cout << "<viewport cx=\"" << m_center_x << "\" cy=\"" << m_center_y

@@ -85,6 +85,6 @@ if(CMAKE_THREAD_LIBS_INIT)
 endif()
 
 add_executable (libWetHair ${Headers} ${Templates} ${Sources})
-target_link_libraries (libWetHair ${LIBWETHAIR_LIBRARIES} "-lpthread" )
+target_link_libraries (libWetHair ${LIBWETHAIR_LIBRARIES} "-lpthread -I/usr/local/include -L/usr/local/lib -lGLEW -lglfw" )
 
 INSTALL_TARGETS(/bin libWetHair)

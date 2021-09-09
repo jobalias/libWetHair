@@ -19,6 +19,7 @@
 #include "fluidsim2D.h"
 #include "fluidsim3D.h"
 #include "openglutils.h"
+#include "DER/StrandForce.h"
 
 #define RADPERDEG 0.0174533
 
@@ -29,6 +30,8 @@ const static scalar eta_epsilon = 5e-2;
 
 std::vector<Vector3f> m_dynamic_hair_core;
 std::vector<Vector3f> m_dynamic_hair_flow;
+std::vector<Vector3f> m_dynamic_hair_m1;
+std::vector<Vector3f> m_dynamic_hair_m2;
 std::vector<Vector3f> m_dynamic_fluid_particles;
 
 template <int DIM>
@@ -44,10 +47,10 @@ TwoDSceneRenderer<DIM>::TwoDSceneRenderer(
       m_semi_circle_points(),
       m_pvm(PVM_ETA),
       m_evm(EVM_NONE),
-      m_show_edge_normal(false),
-      m_show_particle_normal(false),
+      m_show_edge_normal(true),
+      m_show_particle_normal(true),
       m_show_liquid_polygon(true),
-      m_draw_grid(false),
+      m_draw_grid(true),
       m_draw_boundaries(true),
       m_draw_particles(true),
       m_draw_velocities(false),
@@ -55,6 +58,7 @@ TwoDSceneRenderer<DIM>::TwoDSceneRenderer(
   initializeCircleRenderer(disc_arc);
   initializeSemiCircleRenderer(disc_arc);
   initializeCylinderRenderer(disc_arc, scene);
+  initializeCylinderLineRenderer(disc_arc, scene);
   initializeBoundaryRenderer(scene);
 }
 
@@ -68,10 +72,10 @@ template <int DIM>
 TwoDSceneRenderer<DIM>::TwoDSceneRenderer()
     : m_pvm(PVM_NONE),
       m_evm(EVM_NONE),
-      m_show_edge_normal(false),
-      m_show_particle_normal(false),
+      m_show_edge_normal(true),
+      m_show_particle_normal(true),
       m_show_liquid_polygon(true),
-      m_draw_grid(false),
+      m_draw_grid(true),
       m_draw_boundaries(true),
       m_draw_particles(true),
       m_draw_velocities(false),
@@ -162,6 +166,43 @@ void TwoDSceneRenderer<DIM>::initializeCylinderRenderer(
 
   m_dynamic_hair_core.resize(num_points * np);
   m_dynamic_hair_flow.resize(num_points * np);
+  m_dynamic_hair_m1.resize(num_points * np);
+  m_dynamic_hair_m2.resize(num_points * np);
+  m_dynamic_fluid_particles.resize(nfluidp);
+}
+
+template <int DIM>
+void TwoDSceneRenderer<DIM>::initializeCylinderLineRenderer(
+    int num_points, const TwoDScene<DIM>& scene) {
+
+  int npoints = 2;
+  m_cylinder_line_points.resize(npoints);
+  m_cylinder_line_points[0] = Vector3s(0.0, 0.0, 0.0);
+  m_cylinder_line_points[1] = Vector3s(0.0, 0.1, 0.0);
+
+  auto& edges = scene.getEdges();
+  int ne = scene.getNumEdges();
+  int np = scene.getNumParticles();
+  int nfluidp = scene.getFluidSim()->num_particles();
+
+  m_cylinder_line_elements.resize(ne * npoints * 2);
+
+  for (int k = 0; k < ne; ++k) {
+    int base = k * npoints * 2;
+    int vidx0 = edges[k].first;
+    int vidx1 = edges[k].second;
+
+    for (int i = 0; i < npoints; ++i) {
+      int inext = (i + 1) % num_points;
+      m_cylinder_line_elements[base + i * 2 + 0] = vidx0 * num_points + i;
+      m_cylinder_line_elements[base + i * 2 + 1] = vidx0 * num_points + inext;
+    }
+  }
+
+  m_dynamic_hair_core.resize(num_points * np);
+  m_dynamic_hair_flow.resize(num_points * np);
+  m_dynamic_hair_m1.resize(num_points * np);
+  m_dynamic_hair_m2.resize(num_points * np);
   m_dynamic_fluid_particles.resize(nfluidp);
 }
 
@@ -174,6 +215,8 @@ void TwoDSceneRenderer<DIM>::initializeOpenGLRenderer(
   glGenBuffersARB(1, &m_element_hairs);
   glGenBuffersARB(1, &m_vertex_hair_core);
   glGenBuffersARB(1, &m_vertex_hair_flow);
+  glGenBuffersARB(1, &m_vertex_hair_m1);
+  glGenBuffersARB(1, &m_vertex_hair_m2);
   glGenBuffersARB(1, &m_vertex_fluids);
 
   glBindBufferARB(GL_ELEMENT_ARRAY_BUFFER, m_element_hairs);
@@ -187,6 +230,14 @@ void TwoDSceneRenderer<DIM>::initializeOpenGLRenderer(
                   GL_DYNAMIC_DRAW);
 
   glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_flow);
+  glBufferDataARB(GL_ARRAY_BUFFER, disc_arc * np * sizeof(Vector3f), NULL,
+                  GL_DYNAMIC_DRAW);
+
+  glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_m1);
+  glBufferDataARB(GL_ARRAY_BUFFER, disc_arc * np * sizeof(Vector3f), NULL,
+                  GL_DYNAMIC_DRAW);
+
+  glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_m2);
   glBufferDataARB(GL_ARRAY_BUFFER, disc_arc * np * sizeof(Vector3f), NULL,
                   GL_DYNAMIC_DRAW);
 
@@ -320,29 +371,59 @@ void TwoDSceneRenderer<DIM>::updateOpenGLRenderer(const TwoDScene<DIM>& scene,
       int ihair = hair_idx[i];
       int ilocal = local_idx[i];
 
+      const Vec3Array& m1 = scene.getMaterialFrames1(i);
+      const Vec3Array& m2 = scene.getMaterialFrames2(i);
+
       const MatrixXs& vertex_dirs = flows[ihair]->getTangentV();
       const VectorXs& eta = flows[ihair]->getEta();
 
+
       const Vector3sT& ve = vertex_dirs.row(ilocal);
+
+      const Vector3sT& vm1 = m1[ilocal].transpose();
+      const Vector3sT& vm2 = m2[ilocal].transpose();
+
+
       const Vector3s& x0 = x.segment<3>(scene.getDof(i));
       const scalar& radius = scene.getRadius(i);
       const scalar H = radius + eta(ilocal);
 
       double phi0 = atan2(ve(1), ve(0));
+      double phi_m1 = atan2(vm1(2), vm1(1));
+      double phi_m2 = atan2(vm2(2), vm2(1));
       double length0 = ve.norm();
+      double length_m1 = vm1.norm();
+      double length_m2 = vm2.norm();
+
       double gamma0 = -asin(ve(2) / length0);
+      double gamma_m1 = -asin(vm1(0) / length_m1);
+      double gamma_m2 = -asin(vm2(0) / length_m2);
+
 
       Eigen::Affine3d trh =
           Eigen::Affine3d(Eigen::Translation3d(Vector3s(x0(0), x0(1), x0(2)))) *
           Eigen::Affine3d(Eigen::AngleAxisd(phi0, Vector3s(0, 0, 1)) *
-                          Eigen::AngleAxisd(gamma0, Vector3s(0, 1, 0))) *
+                          Eigen::AngleAxisd(gamma0 , Vector3s(0, 1, 0))) *
           Eigen::Affine3d(Eigen::Scaling(0.0, radius, radius));
 
       Eigen::Affine3d trf =
           Eigen::Affine3d(Eigen::Translation3d(Vector3s(x0(0), x0(1), x0(2)))) *
           Eigen::Affine3d(Eigen::AngleAxisd(phi0, Vector3s(0, 0, 1)) *
                           Eigen::AngleAxisd(gamma0, Vector3s(0, 1, 0))) *
-          Eigen::Affine3d(Eigen::Scaling(0.0, H, H));
+          Eigen::Affine3d(Eigen::Scaling(0.0, 0.0, 0.0));
+
+      Eigen::Affine3d trm1 =
+          Eigen::Affine3d(Eigen::Translation3d(Vector3s(x0(0), x0(1), x0(2)))) *
+          Eigen::Affine3d(Eigen::AngleAxisd(phi_m1, Vector3s(1, 0, 0)) *
+                          Eigen::AngleAxisd(gamma_m1 , Vector3s(0, 0, 1))) *
+          Eigen::Affine3d(Eigen::Scaling(0.0, 3.0, 3.0));
+
+      Eigen::Affine3d trm2 =
+          Eigen::Affine3d(Eigen::Translation3d(Vector3s(x0(0), x0(1), x0(2)))) *
+          Eigen::Affine3d(Eigen::AngleAxisd(phi_m2, Vector3s(1, 0, 0)) *
+                          Eigen::AngleAxisd(gamma_m2 , Vector3s(0, 0, 1))) *
+          Eigen::Affine3d(Eigen::Scaling(0.0, 3.0, 3.0));
+
 
       for (int j = 0; j < disc_arc; ++j) {
         // render hairs
@@ -350,6 +431,12 @@ void TwoDSceneRenderer<DIM>::updateOpenGLRenderer(const TwoDScene<DIM>& scene,
             toFloatVec((trh * m_cylinder_points[j]).eval());
         m_dynamic_hair_flow[i * disc_arc + j] =
             toFloatVec((trf * m_cylinder_points[j]).eval());
+        if( m_show_edge_normal) {
+          m_dynamic_hair_m1[i * disc_arc + j] =
+              toFloatVec((trm1 * m_cylinder_line_points[j]).eval());
+          m_dynamic_hair_m2[i * disc_arc + j] =
+              toFloatVec((trm2 * m_cylinder_line_points[j]).eval());
+        }
       }
     }
 
@@ -443,11 +530,21 @@ void TwoDSceneRenderer<DIM>::updateOpenGLRenderer(const TwoDScene<DIM>& scene,
                        m_dynamic_hair_flow.size() * sizeof(Vector3f),
                        &m_dynamic_hair_flow[0]);
 
+    glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_m1);
+    glBufferSubDataARB(GL_ARRAY_BUFFER, 0,
+                       m_dynamic_hair_m1.size() * sizeof(Vector3f),
+                       &m_dynamic_hair_m1[0]);
+
+    glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_m2);
+    glBufferSubDataARB(GL_ARRAY_BUFFER, 0,
+                       m_dynamic_hair_m2.size() * sizeof(Vector3f),
+                       &m_dynamic_hair_m2[0]);
+
     glBindBufferARB(GL_ELEMENT_ARRAY_BUFFER, 0);
   }
 }
 
-template <>
+template<>
 void TwoDSceneRenderer<3>::renderParticleSimulation(
     const TwoDScene<3>& scene) const {
   assert(renderingutils::checkGLErrors());
@@ -548,7 +645,7 @@ void TwoDSceneRenderer<3>::renderParticleSimulation(
                              Vector3s(sb->parameter(0) * outer_scale,
                                       sb->parameter(0) * outer_scale,
                                       sb->parameter(0) * outer_scale),
-                             sb->rot);
+                             sb->rot); 
               glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             }
             break;
@@ -625,6 +722,7 @@ void TwoDSceneRenderer<3>::renderParticleSimulation(
 
   assert(renderingutils::checkGLErrors());
 
+  
   glBindBufferARB(GL_ELEMENT_ARRAY_BUFFER, m_element_hairs);
 
   glColor4d(0, 0, 0, 1.0);
@@ -635,7 +733,27 @@ void TwoDSceneRenderer<3>::renderParticleSimulation(
 
   glDrawElements(GL_QUADS, (int)m_cylinder_elements.size(), GL_UNSIGNED_INT, 0);
 
+  if (m_show_edge_normal) {
+    glColor4d(1.0, 0, 0, 0.2);
+
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_m1);
+    glVertexPointer(3, GL_FLOAT, 0, NULL);
+
+    glDrawElements(GL_LINES, (int)m_cylinder_elements.size(), GL_UNSIGNED_INT, 0);
+
+    glColor4d(0.0, 0, 1.0, 0.2);
+
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_m2);
+    glVertexPointer(3, GL_FLOAT, 0, NULL);
+
+    glDrawElements(GL_LINES, (int)m_cylinder_elements.size(), GL_UNSIGNED_INT, 0);
+
+  }
+
   // render hair flow
+  
   glColor4d(liquid_color(0), liquid_color(1), liquid_color(2), 0.2);
   glEnable(GL_POLYGON_STIPPLE);
 
@@ -650,6 +768,7 @@ void TwoDSceneRenderer<3>::renderParticleSimulation(
   glBindBufferARB(GL_ELEMENT_ARRAY_BUFFER, 0);
 
   glDisable(GL_POLYGON_STIPPLE);
+  
 
   if (scene.doVolSummary()) {
     renderVolumeGraph(scene);
@@ -907,6 +1026,11 @@ void TwoDSceneRenderer<DIM>::selectNextEdgeVisMode() {
 template <int DIM>
 void TwoDSceneRenderer<DIM>::switchShowParticleNormal() {
   m_show_particle_normal = !m_show_particle_normal;
+}
+
+template <int DIM>
+void TwoDSceneRenderer<DIM>::switchShowGrid() {
+  m_draw_grid = !m_draw_grid;
 }
 
 template <int DIM>
