@@ -432,17 +432,16 @@ void TwoDSceneRenderer<DIM>::updateOpenGLRenderer(const TwoDScene<DIM>& scene,
 
       if( m_show_edge_normal) {
         m_dynamic_hair_m1[i * 2] =
-            toFloatVec((trans * m_cylinder_line_points[0]).eval());        
+            toFloatVec((trm1 * m_cylinder_line_points[0]).eval());        
         m_dynamic_hair_m1[i * 2 + 1] =
             toFloatVec((trm1 * m_cylinder_line_points[1]).eval());
         m_dynamic_hair_m2[i * 2] =
-            toFloatVec(( trans * m_cylinder_line_points[0]).eval());        
+            toFloatVec(( trm2 * m_cylinder_line_points[0]).eval());        
         m_dynamic_hair_m2[i * 2 + 1] =
             toFloatVec(( trm2 * m_cylinder_line_points[1]).eval());
       }
 
     }
-
 
     const auto& fluid_particles =
         ((FluidSim3D*)scene.getFluidSim())->get_particles();
