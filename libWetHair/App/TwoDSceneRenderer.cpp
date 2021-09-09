@@ -58,7 +58,7 @@ TwoDSceneRenderer<DIM>::TwoDSceneRenderer(
   initializeCircleRenderer(disc_arc);
   initializeSemiCircleRenderer(disc_arc);
   initializeCylinderRenderer(disc_arc, scene);
-  initializeCylinderLineRenderer(disc_arc, scene);
+  initializeCylinderLineRenderer(2, scene);
   initializeBoundaryRenderer(scene);
 }
 
@@ -166,8 +166,6 @@ void TwoDSceneRenderer<DIM>::initializeCylinderRenderer(
 
   m_dynamic_hair_core.resize(num_points * np);
   m_dynamic_hair_flow.resize(num_points * np);
-  m_dynamic_hair_m1.resize(num_points * np);
-  m_dynamic_hair_m2.resize(num_points * np);
   m_dynamic_fluid_particles.resize(nfluidp);
 }
 
@@ -175,8 +173,7 @@ template <int DIM>
 void TwoDSceneRenderer<DIM>::initializeCylinderLineRenderer(
     int num_points, const TwoDScene<DIM>& scene) {
 
-  int npoints = 2;
-  m_cylinder_line_points.resize(npoints);
+  m_cylinder_line_points.resize(num_points);
   m_cylinder_line_points[0] = Vector3s(0.0, 0.0, 0.0);
   m_cylinder_line_points[1] = Vector3s(0.0, 0.1, 0.0);
 
@@ -185,25 +182,21 @@ void TwoDSceneRenderer<DIM>::initializeCylinderLineRenderer(
   int np = scene.getNumParticles();
   int nfluidp = scene.getFluidSim()->num_particles();
 
-  m_cylinder_line_elements.resize(ne * npoints * 2);
+  m_cylinder_line_elements.resize((ne + 1) * num_points);
 
   for (int k = 0; k < ne; ++k) {
-    int base = k * npoints * 2;
+    int base = k * num_points;
     int vidx0 = edges[k].first;
-    int vidx1 = edges[k].second;
 
-    for (int i = 0; i < npoints; ++i) {
-      int inext = (i + 1) % num_points;
-      m_cylinder_line_elements[base + i * 2 + 0] = vidx0 * num_points + i;
-      m_cylinder_line_elements[base + i * 2 + 1] = vidx0 * num_points + inext;
-    }
+    m_cylinder_line_elements[base] = vidx0 * num_points;
+    m_cylinder_line_elements[base + 1] = vidx0 * num_points + 1;
   }
+  
+  m_cylinder_line_elements[ne * num_points] = edges[ne - 1].second * num_points;
+  m_cylinder_line_elements[ne * num_points + 1] = edges[ne - 1].second * num_points + 1;
 
-  m_dynamic_hair_core.resize(num_points * np);
-  m_dynamic_hair_flow.resize(num_points * np);
   m_dynamic_hair_m1.resize(num_points * np);
   m_dynamic_hair_m2.resize(num_points * np);
-  m_dynamic_fluid_particles.resize(nfluidp);
 }
 
 template <int DIM>
@@ -234,11 +227,11 @@ void TwoDSceneRenderer<DIM>::initializeOpenGLRenderer(
                   GL_DYNAMIC_DRAW);
 
   glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_m1);
-  glBufferDataARB(GL_ARRAY_BUFFER, disc_arc * np * sizeof(Vector3f), NULL,
+  glBufferDataARB(GL_ARRAY_BUFFER, 2 * np * sizeof(Vector3f), NULL,
                   GL_DYNAMIC_DRAW);
 
   glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_m2);
-  glBufferDataARB(GL_ARRAY_BUFFER, disc_arc * np * sizeof(Vector3f), NULL,
+  glBufferDataARB(GL_ARRAY_BUFFER, 2 * np * sizeof(Vector3f), NULL,
                   GL_DYNAMIC_DRAW);
 
   glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_fluids);
@@ -380,8 +373,8 @@ void TwoDSceneRenderer<DIM>::updateOpenGLRenderer(const TwoDScene<DIM>& scene,
 
       const Vector3sT& ve = vertex_dirs.row(ilocal);
 
-      const Vector3sT& vm1 = m1[ilocal].transpose();
-      const Vector3sT& vm2 = m2[ilocal].transpose();
+      const Vector3sT& vm1 = m1[ilocal];
+      const Vector3sT& vm2 = m2[ilocal];
 
 
       const Vector3s& x0 = x.segment<3>(scene.getDof(i));
@@ -425,20 +418,31 @@ void TwoDSceneRenderer<DIM>::updateOpenGLRenderer(const TwoDScene<DIM>& scene,
           Eigen::Affine3d(Eigen::Scaling(0.0, 3.0, 3.0));
 
 
+      Eigen::Affine3d trans =
+          Eigen::Affine3d(Eigen::Translation3d(Vector3s(x0(0), x0(1), x0(2))));
+
+
       for (int j = 0; j < disc_arc; ++j) {
         // render hairs
         m_dynamic_hair_core[i * disc_arc + j] =
             toFloatVec((trh * m_cylinder_points[j]).eval());
         m_dynamic_hair_flow[i * disc_arc + j] =
             toFloatVec((trf * m_cylinder_points[j]).eval());
-        if( m_show_edge_normal) {
-          m_dynamic_hair_m1[i * disc_arc + j] =
-              toFloatVec((trm1 * m_cylinder_line_points[j]).eval());
-          m_dynamic_hair_m2[i * disc_arc + j] =
-              toFloatVec((trm2 * m_cylinder_line_points[j]).eval());
-        }
       }
+
+      if( m_show_edge_normal) {
+        m_dynamic_hair_m1[i * 2] =
+            toFloatVec((trans * m_cylinder_line_points[0]).eval());        
+        m_dynamic_hair_m1[i * 2 + 1] =
+            toFloatVec((trm1 * m_cylinder_line_points[1]).eval());
+        m_dynamic_hair_m2[i * 2] =
+            toFloatVec(( trans * m_cylinder_line_points[0]).eval());        
+        m_dynamic_hair_m2[i * 2 + 1] =
+            toFloatVec(( trm2 * m_cylinder_line_points[1]).eval());
+      }
+
     }
+
 
     const auto& fluid_particles =
         ((FluidSim3D*)scene.getFluidSim())->get_particles();
@@ -530,13 +534,13 @@ void TwoDSceneRenderer<DIM>::updateOpenGLRenderer(const TwoDScene<DIM>& scene,
                        m_dynamic_hair_flow.size() * sizeof(Vector3f),
                        &m_dynamic_hair_flow[0]);
 
-    glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_m1);
-    glBufferSubDataARB(GL_ARRAY_BUFFER, 0,
+    glBindBuffer(GL_ARRAY_BUFFER, m_vertex_hair_m1);
+    glBufferSubData(GL_ARRAY_BUFFER, 0,
                        m_dynamic_hair_m1.size() * sizeof(Vector3f),
                        &m_dynamic_hair_m1[0]);
 
-    glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_m2);
-    glBufferSubDataARB(GL_ARRAY_BUFFER, 0,
+    glBindBuffer(GL_ARRAY_BUFFER, m_vertex_hair_m2);
+    glBufferSubData(GL_ARRAY_BUFFER, 0,
                        m_dynamic_hair_m2.size() * sizeof(Vector3f),
                        &m_dynamic_hair_m2[0]);
 
@@ -740,7 +744,7 @@ void TwoDSceneRenderer<3>::renderParticleSimulation(
     glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_m1);
     glVertexPointer(3, GL_FLOAT, 0, NULL);
 
-    glDrawElements(GL_LINES, (int)m_cylinder_elements.size(), GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_LINES, (int)m_cylinder_line_elements.size(), GL_UNSIGNED_INT, 0); // ~ 300 is size that works best
 
     glColor4d(0.0, 0, 1.0, 0.2);
 
@@ -748,7 +752,7 @@ void TwoDSceneRenderer<3>::renderParticleSimulation(
     glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_m2);
     glVertexPointer(3, GL_FLOAT, 0, NULL);
 
-    glDrawElements(GL_LINES, (int)m_cylinder_elements.size(), GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_LINES, (int)m_cylinder_line_elements.size() * 4, GL_UNSIGNED_INT, 0);
 
   }
 
