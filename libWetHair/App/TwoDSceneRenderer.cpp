@@ -752,7 +752,7 @@ void TwoDSceneRenderer<3>::renderParticleSimulation(
     glBindBufferARB(GL_ARRAY_BUFFER, m_vertex_hair_m2);
     glVertexPointer(3, GL_FLOAT, 0, NULL);
 
-    glDrawElements(GL_LINES, (int)m_cylinder_line_elements.size() * 4, GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_LINES, (int)m_cylinder_line_elements.size(), GL_UNSIGNED_INT, 0);
 
   }
 

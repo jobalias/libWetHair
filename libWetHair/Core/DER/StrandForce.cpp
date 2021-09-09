@@ -158,13 +158,16 @@ void StrandForce::freezeRestShape(
 
 // SNJ: CHANGE TWIST AMOUNT
   for (IndexType vtx = begin; vtx < end; ++vtx) {
-    double twist_amt = 0.0; //-3.1415926 * 2 / getNumVertices();
 
-    
-    if ( vtx == getNumVertices() / 2) {
-      twist_amt = -3.14 *3 /4;
+    double min_twist = - 3.14159;
+    double twist_range = 3.14159 * 2;
+    double twist_amt = 0.0;
+
+    int isTwisted = rand() % 10;
+
+    if(isTwisted % 10 > 7) {
+      twist_amt = min_twist + ((double)rand() / RAND_MAX) * twist_range;
     }
-  
 
     m_restKappas[vtx] = (1. - damping) * m_strandState->m_kappas[vtx] +
                         damping * m_restKappas[vtx];
